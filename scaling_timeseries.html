@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scaling Timeseries</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        .plot-container { margin: 20px; }
+        .session-header { margin: 30px 20px 10px; font-family: sans-serif; }
+        .title-header { margin: 30px 20px 10px; font-family: sans-serif; }
+        .description { margin: 30px 20px 10px; font-family: sans-serif; }
+        .code {
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            padding: 15px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+
+    </style>
+</head>
+<body>
+<h1 class='title-header'>Scaling Timeseries</h1>
+<p class="description">This describes the steps for scaling the timeseries. 
+    The goal is to scale the timeseries to be in similar units and preserve between-run variability.</p>
+<h3 class="session-header">More Details:</h2>
+<p class="description">(paraphrased from Jeanette's message)<br><br>
+    Nilearn's default might not be serving us well here because it scales by the mean for the ROI-averaged time series.
+    Since this mean might be capturing increases in difficulty (because we expect the BOLD signal to be larger for blocks with higher difficulty), this type of scaling could be removing between-run variability due to difficulty, which we’d actually like to preserve for the purposes of predicting time courses.
+    If we instead use the mean across the brain (mean of the average time series across all voxels in the brain mask), that is less likely to have a strong “difficulty” signal component since (I’m assuming) most voxels in the brain are not processing task difficulty.</p>
+<h2 class="session-header">Steps</h2>
+<ol>
+    <li><p class="description">Use brain mask for each BOLD run to extract within brain-average time series.</p></li>
+    <p class="code">labels_masker = NiftiLabelsMasker (<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;labels_img=fmri_mask_img,          # binary mask or image of integers indicating ROIs<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;# standardize="psc",            # Scales by *mean* allows concatenation of runs<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;standardize=False,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;detrend=False,                # Linear detrending you don't really need this<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;high_pass=None, low_pass=None,  # Your cosine functions highpass filter already<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;t_r=tr,                     # needed if filtering is on<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;smoothing_fwhm=None,          # optional<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;standardize_confounds=True,   # stabilizes the regression where confound removal is done<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;verbose=1<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;)</p>
+    <li><p class="description">Load fMRI data and confounds, then apply fit-transform.</p></li>
+    <p class="code">ts = labels_masker.fit_transform(fmri_img_trimmed, confounds=confounds)</p>
+    <li><p class="description">Calculate the global mean.</p></li>
+    <p class="code">global_ts_mean = np.mean(ts, axis=1)</p>
+    <li><p class="description">Extract voxelwise timeseries from motor ROI using same NiftiMasker function and fit transform.</p></li>
+    <p class="code">ts_motor = motor_masker.fit_transform(fmri_img_trimmed, confounds=confounds)</p>
+    <li><p class="description">For each voxel, divide by global_ts_mean.</p></li>
+    <p class="code">ts_motor_scaled = np.divide(ts_motor, global_ts_mean[:, np.newaxis])</p>
+    <li><p class="description">Demean the scaled motor time series. Then, take the median.</p></li>
+    <p class="code">ts_motor_mean = np.mean(ts_motor_scaled, axis=1)[:, np.newaxis] # num_timepoints, 1 <br>
+        ts_motor_scaled = ts_motor_scaled - ts_motor_mean <br>
+        final_motor_ts = np.median(ts_motor_scaled, axis=1)</p>
+</ol>
+</body>
+</html>
